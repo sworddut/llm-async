@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import 'dotenv/config';
 
 const openai = new OpenAI({
   apiKey: process.env.deepseek_api_key,
@@ -69,7 +70,8 @@ async function streamChat(messages) {
             console.log("\n🔄 使用 prefix 续写...\n");
             return streamChat([
               ...messages,
-              { role: "assistant", content, prefix: true }
+              { role: "assistant", content: content + "已调用function call"}
+              // { role: "assistant", content: content + "已调用function call" , prefix: true } prefix有时候会产生bug
             ]);
           }
         })
