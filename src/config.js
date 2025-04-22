@@ -14,12 +14,12 @@ export const sleep = ms => new Promise(res => setTimeout(res, ms));
 export const functionMap = {
   getWeather: async (city) => {
     console.log(`🌤️ 正在获取 ${city} 的天气...`);
-    await sleep(2500);
+    await sleep(6000);
     return `${city} 晴天 22°C - 32°C 东北风3级`;
   },
   getFood: async (city) => {
     console.log(`🍜 正在获取 ${city} 的美食推荐...`);
-    await sleep(2500);
+    await sleep(6000);
     return `${city} 有烤鸭、豆汁、炸酱面`;
   }
 };

@@ -2,21 +2,37 @@ import { openai, tools } from './config.js';
 import { createFunctionPromises } from './functionHandler.js';
 
 /**
- * 流式输出助手回复
+ * 流式输出助手回复，支持中断
  * @param {Object} stream - 流式响应
+ * @param {AbortController} abortController - 中断控制器
  * @returns {Promise<string>} - 完整内容
  */
-async function streamOutput(stream) {
+async function streamOutput(stream, abortController) {
   let content = "";
   process.stdout.write('\n');
   
-  for await (const chunk of stream) {
-    const delta = chunk.choices[0].delta?.content;
-    if (delta) {
-      content += delta;
-      process.stdout.write(delta);
+  try {
+    for await (const chunk of stream) {
+      // 检查是否已中断
+      if (abortController?.signal.aborted) {
+        console.log('\n⛔ 流式输出被中断');
+        break;
+      }
+      
+      const delta = chunk.choices[0].delta?.content;
+      if (delta) {
+        content += delta;
+        process.stdout.write(delta);
+      }
+    }
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      console.log('\n⛔ 流式输出被中断');
+    } else {
+      throw error;
     }
   }
+  
   process.stdout.write('\n');
   return content;
 }
@@ -144,6 +160,19 @@ export async function enhancedChat() {
       }
     ];
     
+    // 创建中断控制器，用于在 function call 结果返回时中断第二轮对话
+    const abortController = new AbortController();
+    let bridgeContent = "";
+    let bridgeStream = null;
+    
+    // 开启一个并行任务，等待 function call 结果
+    const functionResultsPromise = Promise.all(functionPromises).then(results => {
+      console.log("✅ 所有 function call 已完成，中断景点介绍");
+      // 中断第二轮对话
+      abortController.abort();
+      return results;
+    });
+    
     // 第二轮对话 - 让 LLM 在等待时继续生成内容
     console.log("🔄 第二轮对话：让 LLM 在等待时继续生成内容...");
     const bridgeMessages = [
@@ -159,16 +188,25 @@ export async function enhancedChat() {
     
     // 流式输出景点介绍
     console.log("🔛️ 景点介绍：");
-    const stream2 = await openai.chat.completions.create({
-      model: "deepseek-chat",
-      messages: bridgeMessages,
-      stream: true
-    });
-    const bridgeContent = await streamOutput(stream2);
+    try {
+      const stream2 = await openai.chat.completions.create({
+        model: "deepseek-chat",
+        messages: bridgeMessages,
+        stream: true
+      });
+      
+      // 开始流式输出，传入中断控制器
+      bridgeContent = await streamOutput(stream2, abortController);
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        console.error('流式输出错误:', error);
+      }
+      // 即使出错也继续执行
+    }
     
-    // 等待所有 function call 完成
-    const functionResults = await Promise.all(functionPromises);
-    console.log("✅ 所有 function call 已完成");
+    // 等待 function call 结果
+    const functionResults = await functionResultsPromise;
+    console.log("✅ 开始整合信息");
     
     // 第三轮对话 - 整合所有信息
     const finalMessages = [
